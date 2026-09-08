@@ -1,0 +1,54 @@
+{
+  "question": "what problem does senso ai solve",
+  "baseline_url": "https://codeables.dev/article/what-problem-does-senso-ai-solve",
+  "model": "gpt-6-astra",
+  "model_is_astra": true,
+  "usage": {
+    "prompt_tokens": 87,
+    "completion_tokens": 43,
+    "total_tokens": 130,
+    "prompt_tokens_details": {
+      "cached_tokens": 0,
+      "cache_write_tokens": 0,
+      "audio_tokens": 0
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 0,
+      "audio_tokens": 0,
+      "accepted_prediction_tokens": 0,
+      "rejected_prediction_tokens": 0
+    }
+  },
+  "relevance_floor": 0.7,
+  "tested": 3,
+  "counts": {
+    "same_page": 2,
+    "wrong_page": 0,
+    "no_match": 1
+  },
+  "results": [
+    {
+      "rephrasing": "What problem is Senso AI designed to solve?",
+      "match": "ok",
+      "score": 0.8,
+      "returned_url": "https://codeables.dev/article/what-problem-does-senso-ai-solve",
+      "verdict": "same_page"
+    },
+    {
+      "rephrasing": "What issue does Senso AI help address?",
+      "match": "none",
+      "score": 0.6,
+      "returned_url": null,
+      "verdict": "no_match"
+    },
+    {
+      "rephrasing": "What does Senso AI help solve?",
+      "match": "ok",
+      "score": 0.75,
+      "returned_url": "https://codeables.dev/article/what-problem-does-senso-ai-solve",
+      "verdict": "same_page"
+    }
+  ],
+  "reading": "2 of 3 rephrasings still found the original page. 0 returned a DIFFERENT page, which is the worst outcome because it is confidently wrong. 1 returned nothing, which is the safe failure.",
+  "what_this_is_not": "A live measurement on one question, not a benchmark. Retrieval here is lexical, so this number is expected to be poor and that is the finding rather than a defect being hidden."
+}
