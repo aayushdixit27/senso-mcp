@@ -26,111 +26,180 @@
 const http = require('http');
 
 const PAGE = `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>From an answer to your next step</title>
+<html><head><meta charset="utf-8"><title>ChatGPT</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
-  :root{--ink:#12161c;--mut:#5b6673;--line:#e2e6eb;--bg:#fbfcfd;--card:#fff;--brand:#0f8a6a;--warn:#8a5a0f;--bad:#a3352b}
-  *{box-sizing:border-box}
-  body{margin:0;background:var(--bg);color:var(--ink);font:17px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,sans-serif}
-  .wrap{max-width:760px;margin:0 auto;padding:56px 24px 96px}
-  h1{font-size:34px;line-height:1.2;margin:0 0 8px;letter-spacing:-.02em}
-  .sub{color:var(--mut);margin:0 0 32px;font-size:16px}
-  form{display:flex;gap:10px;margin-bottom:10px}
-  input{flex:1;padding:15px 16px;font-size:17px;border:1px solid var(--line);border-radius:10px;background:#fff;color:var(--ink)}
-  input:focus{outline:2px solid var(--brand);outline-offset:-1px;border-color:var(--brand)}
-  button{padding:15px 24px;font-size:17px;font-weight:600;border:0;border-radius:10px;background:var(--brand);color:#fff;cursor:pointer}
-  button:disabled{opacity:.5;cursor:default}
-  .hint{color:var(--mut);font-size:14px;margin:0 0 36px}
-  .hint b{color:var(--ink);font-weight:600}
-  .phase{display:flex;align-items:center;gap:10px;color:var(--mut);font-size:15px;padding:14px 0}
-  .dot{width:8px;height:8px;border-radius:50%;background:var(--brand);animation:p 1s ease-in-out infinite}
-  @keyframes p{0%,100%{opacity:.25}50%{opacity:1}}
-  .answer{font-size:19px;line-height:1.6;margin:0 0 6px}
-  .lbl{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--mut);margin:0 0 8px}
-  .src{font-size:15px;margin:14px 0 0}
-  .src a{color:var(--brand)}
-  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:24px;margin:28px 0 0}
-  .who{font-size:13px;color:var(--mut);margin:0 0 10px}
-  .fit{font-size:15px;color:var(--mut);margin:0 0 18px}
-  .cta{display:inline-block;padding:14px 26px;background:var(--ink);color:#fff;text-decoration:none;border-radius:10px;font-weight:600}
-  .chk{font-size:13px;color:var(--mut);margin:16px 0 0}
-  .chk.bad{color:var(--bad)}.chk.warn{color:var(--warn)}
-  .none{background:#fff;border:1px dashed var(--line);border-radius:14px;padding:24px;margin:28px 0 0}
-  .none h3{margin:0 0 8px;font-size:17px}
-  .none p{margin:0;color:var(--mut);font-size:15px}
-  details{margin:30px 0 0;border-top:1px solid var(--line);padding-top:16px}
-  summary{cursor:pointer;color:var(--mut);font-size:14px}
-  pre{background:#f4f6f8;border:1px solid var(--line);border-radius:8px;padding:14px;overflow:auto;font-size:12.5px;line-height:1.5;margin:14px 0 0}
-  .err{background:#fdf3f2;border:1px solid #f0cdc9;color:var(--bad);border-radius:10px;padding:16px;margin:24px 0 0;font-size:15px}
-  .foot{margin:44px 0 0;padding-top:16px;border-top:1px solid var(--line);color:var(--mut);font-size:13px}
-</style></head><body><div class="wrap">
-<h1>From an answer to your next step</h1>
-<p class="sub">Ask a question. Get a published answer, its source, and the next step the publisher attached to it.</p>
-<form id="f"><input id="q" value="__EXAMPLE__" autocomplete="off"><button id="go" type="submit">Ask</button></form>
-<p class="hint">Retrieval uses <b>no API key and no account</b>. It reads the published page over ordinary HTTP. The explanation below it is written by a model, which does authenticate.</p>
+:root{--ink:#0d0d0d;--mut:#5d5d67;--faint:#8f8f9d;--line:#e8e8ed;--hair:#ededf1;--bub:#e8edfb;
+      --grn:#17864a;--grnbg:#e6f4ec;--off:#8e8e99;--offbg:#f1f1f3}
+*{box-sizing:border-box}
+html{-webkit-font-smoothing:antialiased}
+body{margin:0;background:#fff;color:var(--ink);
+     font:17px/1.75 ui-sans-serif,-apple-system,"Segoe UI",Helvetica,Arial,sans-serif}
+.thread{max-width:790px;margin:0 auto;padding:30px 24px 140px}
+.askbar{display:flex;gap:10px;margin-bottom:10px}
+.askbar input{flex:1;padding:14px 18px;border:1px solid var(--line);border-radius:26px;font:inherit;font-size:16px}
+.askbar input:focus{outline:none;border-color:#c9c9d4}
+.askbar button{padding:14px 22px;border:0;border-radius:26px;background:var(--ink);color:#fff;font:inherit;font-weight:600;cursor:pointer}
+.askbar button:disabled{opacity:.4}
+.presets{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:34px}
+.presets b{font-weight:450;font-size:13px;color:var(--mut);background:#f6f6f8;padding:6px 12px;border-radius:999px;cursor:pointer}
+.turn{display:flex;justify-content:flex-end;margin-bottom:32px}
+.bub{background:var(--bub);border-radius:22px;padding:12px 20px;max-width:76%;font-size:17px;line-height:1.55}
+.ans p{margin:0 0 20px}
+.ans strong{font-weight:650}
+table{width:100%;border-collapse:collapse;margin:6px 0 26px;font-size:16px}
+th{text-align:left;font-weight:650;padding:0 16px 12px 0;border-bottom:1px solid var(--hair)}
+td{padding:15px 16px 15px 0;border-bottom:1px solid var(--hair);vertical-align:top;color:#24242c}
+td.n{font-weight:650;color:var(--ink)}
+tr.hit td{background:#fbfcff}
+.mark{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:650;color:var(--grn);
+      background:var(--grnbg);padding:3px 9px;border-radius:999px;margin-left:8px;vertical-align:1px}
+.mark svg{width:11px;height:11px}
+/* the big box, inline in the answer */
+.box{border:1px solid var(--line);border-radius:18px;padding:16px;margin:4px 0 26px;background:#fff}
+.bhead{display:flex;align-items:flex-start;gap:14px;padding:2px 4px 14px}
+.blogo{width:52px;height:52px;border-radius:50%;background:#fff;border:1px solid var(--line);flex:0 0 52px;
+       display:grid;place-items:center;overflow:hidden;padding:7px}
+.blogo img{max-width:100%;max-height:100%}
+.blogo .wm{font-size:12px;font-weight:800;color:var(--mut);text-align:center;line-height:1.15}
+.btitle{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.btitle h3{margin:0;font-size:19px;font-weight:650;line-height:1.35;letter-spacing:-.01em}
+.tag{font-size:12px;font-weight:650;padding:3px 10px;border-radius:999px;cursor:pointer}
+.tag.on{color:var(--grn);background:var(--grnbg)}
+.tag.off{color:var(--off);background:var(--offbg)}
+.bdesc{margin-top:6px;color:var(--mut);font-size:15.5px;line-height:1.55}
+.split{display:flex;gap:18px;border-top:1px solid var(--hair);padding-top:16px;align-items:flex-start}
+.shot{flex:0 0 46%;height:206px;border-radius:12px;overflow:hidden;background:#f2f2f6;
+      display:grid;place-items:center;text-align:center}
+.shot img{width:100%;height:100%;object-fit:cover;object-position:center;display:block}
+.shot .empty{color:#9a9aa8;font-size:13px;line-height:1.6;max-width:220px;padding:16px}
+.side{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;justify-content:center;gap:9px;
+      height:206px;padding:2px 2px 2px 0}
+.kick{color:var(--mut);font-size:14.5px}
+.side h4{margin:0;font-size:19px;font-weight:650;letter-spacing:-.01em;line-height:1.3}
+.loc{display:flex;align-items:center;gap:8px;color:var(--mut);font-size:14.5px}
+.loc svg{width:16px;height:16px;flex:0 0 16px;color:#9a9aa8}
+.side h4{white-space:normal;overflow-wrap:anywhere}
+.btitle h3{overflow-wrap:anywhere}
+.sub{display:inline-flex;align-items:center;justify-content:center;gap:11px;background:var(--grn);color:#fff;
+     text-decoration:none;padding:12px 20px;border-radius:10px;font-weight:650;font-size:15px;
+     margin-top:2px;align-self:flex-start}
+.sub svg{width:16px;height:16px;flex:0 0 16px}
+.held{border-radius:10px;background:#fbf4f4;border:1px solid #efdcdc;padding:12px 14px;color:#84464a;font-size:14px;line-height:1.6}
+.held b{color:#68343a;display:block;margin-bottom:2px}
+.vs{display:inline-flex;align-items:center;gap:8px;font-size:14px;font-weight:500;cursor:pointer;
+     white-space:nowrap;align-self:flex-start}
+.vs svg{width:15px;height:15px;flex:0 0 15px}
+.vs.on{color:var(--grn)}.vs.off{color:var(--off)}
+.pills{display:flex;flex-wrap:wrap;gap:7px;padding:14px 4px 2px}
+.p{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;padding:5px 11px;border-radius:999px;cursor:pointer;font-weight:550}
+.p.on{background:var(--grnbg);color:var(--grn)}
+.p.off{background:var(--offbg);color:var(--off)}
+.p svg{width:12px;height:12px}
+.ev{margin:12px 4px 0;background:#fafafc;border:1px solid var(--line);border-radius:12px;padding:15px 17px;
+    font:12.5px/1.7 ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre-wrap;word-break:break-word;color:#43434e}
+.chip{display:inline-flex;align-items:center;gap:6px;background:#f1f1f3;border-radius:999px;padding:3px 10px 3px 7px;
+      font-size:12.5px;color:var(--mut);cursor:pointer;vertical-align:1px;margin-left:3px}
+.chip svg{width:13px;height:13px}
+.note{color:var(--faint);font-size:13px;line-height:1.6;margin-top:12px}
+.prog{display:flex;align-items:center;gap:11px;color:var(--faint);font-size:16px}
+.sp2{width:14px;height:14px;border:2px solid var(--line);border-top-color:var(--faint);border-radius:50%;animation:s .8s linear infinite}
+@keyframes s{to{transform:rotate(360deg)}}
+[hidden]{display:none!important}
+</style></head><body><div class="thread">
+<form class="askbar" id="f"><input id="q" placeholder="Ask anything" autocomplete="off"><button id="go">Ask</button></form>
+<div class="presets">
+  <b data-q="What makes documentation readable by AI agents?">Senso: success</b>
+  <b data-q="what problem does senso ai solve">Senso: blocked</b>
+  <b data-q="best way to rent an SUV in Los Angeles">Turo: success</b>
+  <b data-q="best luxury suv from mercedes">Mercedes-Benz: success</b>
+  <b data-q="best mobile plans in canada telus">TELUS: agent blocked</b>
+  <b data-q="best term life insurance in canada sun life">Sun Life: agent blocked</b>
+</div>
 <div id="out"></div>
-<div class="foot" id="foot"></div>
 </div><script>
-const $=s=>document.querySelector(s), out=$('#out');
-let cfg={};
-fetch('/api/config').then(r=>r.json()).then(c=>{cfg=c;
-  $('#foot').textContent='Model: '+c.model+(c.model_key_present?'':'  (no key set)')+'  ·  Consumer: '+c.cta_base;});
-const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));
-const phase=t=>{out.innerHTML='<div class="phase"><span class="dot"></span>'+esc(t)+'</div>';};
-
-function checkLine(a,when){
-  const v=a.verified||{};
-  if(v.status==='resolves') return '<p class="chk">Link checked '+esc(new Date(when).toLocaleTimeString())+' · responded '+esc(v.http_status)+'</p>';
-  if(v.status==='dead') return '<p class="chk bad">Link checked '+esc(new Date(when).toLocaleTimeString())+' · did not resolve ('+esc(v.http_status)+'). Not shown as usable.</p>';
-  if(v.status==='unreachable') return '<p class="chk warn">Link could not be checked from here. Unknown, not broken.</p>';
-  return '<p class="chk warn">Link not checked.</p>';
+var $=function(s){return document.querySelector(s)};
+function esc(t){return String(t==null?'':t).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
+var cfg={};fetch('/api/config').then(function(r){return r.json()}).then(function(c){cfg=c;$('#q').value=c.example});
+var TICK='<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M13.5 4.5 6.2 11.8 2.9 8.5"/></svg>';
+var CROSS='<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round"><path d="M4.2 4.2l7.6 7.6M11.8 4.2l-7.6 7.6"/></svg>';
+var PIN='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 21s7-6.3 7-11a7 7 0 1 0-14 0c0 4.7 7 11 7 11z"/><circle cx="12" cy="10" r="2.6"/></svg>';
+var ARR='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>';
+var DIA='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2.5 21.5 12 12 21.5 2.5 12z"/></svg>';
+var LNK='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M10 13a5 5 0 0 0 7 0l2-2a5 5 0 1 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-2 2a5 5 0 1 0 7 7l1-1"/></svg>';
+function pill(on,l,ev){return '<span class="p '+(on?'on':'off')+'" data-ev="'+esc(JSON.stringify(ev))+'">'+(on?TICK:CROSS)+esc(l)+'</span>'}
+function bigBox(p,m){
+  var src=p.source||{},a=p.action,w=p.action_withheld,id=p.publisher_identity||{},img=p.image||{};
+  var dom=src.publisher||'',name=id.name||dom||'Publisher';
+  var declared=p.answer_source&&p.answer_source.indexOf('declared by the publisher')>=0;
+  var title=(src.title||'').split('|')[0].trim();
+  var v=a?a.verified:null;
+  var o='<div class="box">';
+  o+='<div class="bhead"><div class="blogo">'+(id.logo?'<img src="'+esc(id.logo)+'" alt="">':'<span class="wm">'+esc(name)+'</span>')+'</div><div style="flex:1">';
+  o+='<div class="btitle"><h3>'+esc(title||name)+'</h3><span class="tag '+(a?'on':'off')+'" data-ev="'+esc(JSON.stringify({slot:'Next step',earned:!!a,rule:'the destination was requested over HTTP and responded, and it is not the publisher\\u2019s own site root',observed:v||w||p.action_missing||null}))+'">'+(a?'Verified':'Unverified')+'</span></div>';
+  o+='<div class="bdesc">'+esc(p.answer||'')+'</div></div></div>';
+  o+='<div class="split"><div class="shot">'+(img.url?'<img src="'+esc(img.url)+'" alt="">':'<span class="empty">'+esc(img.missing||'No image declared.')+'</span>')+'</div><div class="side">';
+  o+='<div class="kick">'+(a?'Checked for this question':'Not passed on')+'</div>';
+  o+='<h4>'+esc(a?a.label:(w?w.label:name))+'</h4>';
+  if(v) o+='<div class="loc">'+PIN+'Destination responded, HTTP '+esc(v.http_status)+(v.redirects?', after '+esc(v.redirects)+' redirect':'')+'</div>';
+  if(a) o+='<a class="sub" href="'+esc(a.target)+'" target="_blank" rel="noopener">'+esc(a.label)+ARR+'</a>';
+  else if(w) o+='<div class="held"><b>Withheld</b>'+esc(w.say_this)+'</div>';
+  else o+='<div class="held"><b>No next step declared</b>'+esc(p.action_missing||'This page declares none. None was invented.')+'</div>';
+  o+='<div class="vs '+(src.url?'on':'off')+'" data-ev="'+esc(JSON.stringify({slot:'Verified source',earned:!!src.url,rule:'the citation resolves and belongs to the publisher\\u2019s domain',observed:src.url}))+'">'+DIA+'Verified Source</div>';
+  o+='</div></div>';
+  o+='<div class="pills">';
+  o+=pill(declared,'Verified answer',{slot:'Verified answer',earned:declared,rule:'the text is the publisher\\u2019s own declared schema.org description',observed:p.answer_source,missing:p.answer_missing||undefined});
+  o+=pill(!!id.name,'Publisher identity',{slot:'Publisher identity',earned:!!id.name,rule:'the wordmark comes from the publisher\\u2019s declared schema.org Organization',observed:id.name_source||'not declared'});
+  o+=pill(!!img.url,'Declared image',{slot:'Image',earned:!!img.url,rule:'the photograph is the publisher\\u2019s own declared og:image or schema.org image, never stock and never generated',observed:img.source||img.missing});
+  o+=pill(!!a,'Next step checked',{slot:'Next step',earned:!!a,rule:'the destination responded over HTTP and is not the publisher\\u2019s site root',observed:v||w||p.action_missing||null});
+  o+='</div><div class="ev" id="ev" hidden></div></div>';
+  return o;
 }
-
-$('#f').addEventListener('submit',async e=>{
+function shortlist(p){
+  var alts=(p.also_considered||[]).slice(0,4);
+  if(!alts.length) return '';
+  var src=p.source||{},id=p.publisher_identity||{};
+  var o='<table><tr><th>Source</th><th>Why it came up</th></tr>';
+  o+='<tr class="hit"><td class="n">'+esc(id.name||src.publisher)+'<span class="mark">'+TICK+'Verified card</span></td><td>Top match, and it carries a declared next step</td></tr>';
+  alts.forEach(function(r){ o+='<tr><td class="n">'+esc((r.title||'').split('|')[0].trim().slice(0,58))+'</td><td>Also considered, no card</td></tr>'; });
+  return o+'</table>';
+}
+function render(q,p,m){
+  var src=p.source||{},dom=src.publisher||'';
+  var prose=(m&&m.explanation)||p.answer||'';
+  var o='<div class="turn"><div class="bub">'+esc(q)+'</div></div><div class="ans">';
+  o+='<p>'+esc(prose)+'<span class="chip" data-ev="'+esc(JSON.stringify({slot:'Citation',rule:'this answer comes from a published page fetched over ordinary public HTTP with no key',observed:src.url}))+'">'+LNK+esc(dom)+'</span></p>';
+  o+=shortlist(p);
+  o+=bigBox(p,m);
+  if(p.is_live_audit) o+='<div class="note">'+esc(p.audit_note||'')+' Structured data blocks on this page: <b>'+esc(p.structured_data_blocks)+'</b>.</div>';
+  if(m&&m.fit) o+='<div class="note">'+esc(cfg.model||'The model')+' rated the attached offer <b>'+esc(m.fit)+'</b> for this question. '+esc(m.fit_reason||'')+'</div>';
+  o+='<div class="note">Every green mark on the card is a check that passed. Click one for the rule and what was observed. Grey means the publisher left that slot empty or the check did not pass.</div>';
+  return o+'</div>';
+}
+document.addEventListener('click',function(e){
+  var b=e.target.closest('.p,.tag,.vs,.chip'); if(!b||!b.getAttribute('data-ev')) return;
+  var ev=$('#ev'); if(!ev) return;
+  ev.textContent=JSON.stringify(JSON.parse(b.getAttribute('data-ev')),null,2); ev.hidden=false;
+});
+document.addEventListener('click',function(e){
+  var t=e.target.closest('.presets b'); if(!t) return;
+  $('#q').value=t.getAttribute('data-q'); $('#f').dispatchEvent(new Event('submit',{cancelable:true}));
+});
+$('#f').addEventListener('submit',async function(e){
   e.preventDefault();
-  const question=$('#q').value.trim(); if(!question) return;
-  $('#go').disabled=true;
+  var question=$('#q').value.trim(); if(!question) return;
+  var out=$('#out'); $('#go').disabled=true;
+  var head='<div class="turn"><div class="bub">'+esc(question)+'</div></div>';
+  out.innerHTML=head+'<div class="prog"><span class="sp2"></span>Searching</div>';
   try{
-    phase('Finding a source');
-    const r=await fetch('/api/retrieve',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({question})});
-    const p=await r.json();
-    if(p.error){out.innerHTML='<div class="err"><b>Retrieval failed.</b> '+esc(p.detail||p.error)+'</div>';return;}
-
-    if(p.match!=='ok'){
-      out.innerHTML='<div class="none"><h3>No confident match in the published network.</h3>'+
-        '<p>Nothing was fetched and no next step is offered. Best candidate scored '+esc(p.best_score)+', below the floor of '+esc(p.min_score)+'.</p></div>'+
-        '<details><summary>How this was sourced</summary><pre>'+esc(JSON.stringify(p,null,1))+'</pre></details>';
-      return;
-    }
-
-    const a=p.action, when=p.checked_at;
-    let html='<p class="lbl">Answer, in the publisher\\'s own words</p><p class="answer">'+esc(p.answer)+'</p>'+
-      '<p class="src">Source: <a href="'+esc(p.source.url)+'" target="_blank" rel="noopener">'+esc(p.source.url)+'</a></p>';
-    if(a && a.usable){
-      html+='<div class="card"><p class="who">'+esc(p.source.publisher)+' attached this next step</p>'+
-        '<p class="fit" id="fit">Checking how well it fits your question…</p>'+
-        '<a class="cta" href="'+esc(a.target)+'" target="_blank" rel="noopener">'+esc(a.label)+'</a>'+
-        checkLine(a,when)+'</div>';
-    } else if(a){
-      html+='<div class="none"><h3>The publisher attached a next step, but it is not usable.</h3><p>'+esc(p.action_note||'')+'</p></div>';
-    } else {
-      html+='<div class="none"><h3>This page attaches no next step.</h3><p>None was invented.</p></div>';
-    }
-    html+='<details><summary>How this was sourced</summary><pre id="trace">'+esc(JSON.stringify(p,null,1))+'</pre></details>';
-    out.innerHTML=html;
-
-    if(a && a.usable){
-      const fit=$('#fit'); fit.textContent='Preparing your answer…';
-      const r2=await fetch('/api/explain',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({question,payload:p})});
-      const m=await r2.json();
-      if(m.error){ fit.innerHTML='<span style="color:var(--warn)">Explanation unavailable ('+esc(m.error)+'). The retrieved answer and next step above are unaffected.</span>'; }
-      else{
-        const tag=m.fit==='good'?'':' <b>Fit is '+esc(m.fit)+':</b> '+esc(m.fit_reason);
-        fit.innerHTML='<b>Explanation (written by '+esc(m.model)+', not by the publisher):</b> '+esc(m.explanation)+tag;
-        const t=$('#trace'); if(t) t.textContent+='\\n\\nmodel: '+JSON.stringify({model:m.model,fit:m.fit,ms:m.model_ms},null,1);
-      }
-    }
-  }catch(err){ out.innerHTML='<div class="err"><b>Request failed.</b> '+esc(err.message)+'</div>'; }
+    var r=await fetch('/api/retrieve',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({question:question})});
+    var p=await r.json();
+    if(p.match!=='ok'){ out.innerHTML=head+'<div class="ans"><p>No published page answers this closely enough. Best score '+esc(p.best_score!=null?p.best_score:p.score)+' against the relevance floor, so nothing was returned rather than something confidently wrong.</p></div>'; return; }
+    out.innerHTML=head+'<div class="prog"><span class="sp2"></span>Reading the source and checking its next step</div>';
+    var m=null;
+    try{ var r2=await fetch('/api/explain',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({question:question,payload:p})}); var mm=await r2.json(); if(!mm.error) m=mm; }catch(_){}
+    out.innerHTML=render(question,p,m);
+  }catch(err){ out.innerHTML=head+'<div class="ans"><p>Request failed. '+esc(err.message)+'</p></div>'; }
   finally{ $('#go').disabled=false; }
 });
 </script></body></html>`;
@@ -138,7 +207,7 @@ $('#f').addEventListener('submit',async e=>{
 
 const PORT       = Number(process.env.ASTRA_PORT || 8800);
 const CTA_BASE   = process.env.CTA_BASE || 'http://localhost:8899';
-const MODEL      = process.env.ASTRA_MODEL || 'gpt-5.4-mini';
+const MODEL      = process.env.ASTRA_MODEL || 'gpt-6-astra';
 const OPENAI_KEY = process.env.OPENAI_API_KEY || '';
 const EXAMPLE_Q  = 'What makes documentation readable by AI agents?';
 

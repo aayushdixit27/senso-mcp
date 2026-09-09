@@ -1,0 +1,24 @@
+{
+  "_README": "LIVE PUBLISHER AUDITS. Each entry names a real public homepage, fetched over ordinary public HTTPS. Card text, identity and imagery come from that page wherever the page returns them. Where the publisher's edge refuses the request, the card says so and names the wall, and the fields marked supplied below are used so the card still renders. Anything supplied is labelled as supplied in the payload and on the card. Never present a supplied field as one the publisher declared.",
+  "cards": [
+    { "id": "mercedes", "triggers": ["mercedes", "best luxury suv", "best electric suv"],
+      "url": "https://www.mercedes-benz.ca/en", "fallback_name": "Mercedes-Benz Canada", "domain": "mercedes-benz.ca",
+      "supplied_image": "https://upload.wikimedia.org/wikipedia/commons/9/98/Mercedes-Benz_Star_%281969-1986%2C_2025-%29.svg",
+      "action": { "label": "Explore Mercedes-Benz Canada", "target": "https://www.mercedes-benz.ca/en" } },
+
+    { "id": "turo", "triggers": ["turo", "rent an suv in los angeles", "best way to rent an suv"],
+      "url": "https://turo.com/", "fallback_name": "Turo", "domain": "turo.com",
+      "supplied_image": "https://resources.turo.com/next-js/0.0.1/og-image.png",
+      "action": { "label": "Find a car on Turo", "target": "https://turo.com/" } },
+
+    { "id": "telus", "triggers": ["telus", "best iphone plan", "best mobile plans in canada"],
+      "url": "https://www.telus.com/en", "fallback_name": "TELUS", "domain": "telus.com",
+      "supplied_image": "https://logos-world.net/wp-content/uploads/2021/03/Telus-Logo.png",
+      "action": { "label": "Shop TELUS mobility", "target": "https://www.telus.com/en/mobility/plans" } },
+
+    { "id": "sunlife", "triggers": ["sun life", "sunlife", "term life", "best term life insurance"],
+      "url": "https://www.sunlife.ca/en/", "fallback_name": "Sun Life", "domain": "sunlife.ca",
+      "supplied_image": "https://www.google.com/s2/favicons?domain=sunlife.ca&sz=256",
+      "action": { "label": "Explore Sun Life insurance", "target": "https://www.sunlife.ca/en/insurance/life-insurance/" } }
+  ]
+}

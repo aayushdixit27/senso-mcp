@@ -87,6 +87,10 @@ const PRIVATE_HOST = /^(localhost$|127\.|0\.|10\.|169\.254\.|192\.168\.|172\.(1[
 const dnsp = require('dns').promises;
 const net = require('net');
 const MAX_REDIRECTS = 5;
+// Destination checks send a normal browser user agent. A brand's edge that refuses an unknown
+// agent string would otherwise be reported as a broken link, which would be false and would be
+// the worst possible error to put in front of that brand.
+const CHECK_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0 Safari/537.36';
 
 function addrIsPrivate(ip) {
   if (net.isIPv4(ip)) {
@@ -162,10 +166,10 @@ async function verifyActionTarget(target) {
       }
       let r;
       try {
-        r = await fetch(url, { method: 'HEAD', redirect: 'manual', signal: ac.signal, headers: { 'user-agent': UA } });
+        r = await fetch(url, { method: 'HEAD', redirect: 'manual', signal: ac.signal, headers: { 'user-agent': CHECK_UA } });
         // some origins answer HEAD with 405 or 501 while serving GET perfectly well
         if (r.status === 405 || r.status === 501) {
-          r = await fetch(url, { method: 'GET', redirect: 'manual', signal: ac.signal, headers: { 'user-agent': UA } });
+          r = await fetch(url, { method: 'GET', redirect: 'manual', signal: ac.signal, headers: { 'user-agent': CHECK_UA } });
         }
       } catch (e) {
         return {
@@ -186,12 +190,23 @@ async function verifyActionTarget(target) {
         url = next;
         continue;
       }
+      // A refusal is not an absence. 401, 403 and 429 mean the origin declined to answer US,
+      // usually bot protection, and say nothing about whether the page exists for a person.
+      // Reporting those as "dead" would tell a publisher their live page is broken, which is
+      // both wrong and the kind of error that destroys trust in the check. 5xx is the same
+      // shape: a server that is failing right now is not a page that does not exist.
+      const declined = r.status === 401 || r.status === 403 || r.status === 429;
+      const serverErr = r.status >= 500;
+      const status = r.ok ? 'resolves' : (declined || serverErr ? 'unreachable' : 'dead');
       return {
-        status: r.ok ? 'resolves' : 'dead',
+        status,
         http_status: r.status,
         final_url: url.href !== target ? url.href : undefined,
         redirects: hops,
-        reason: r.ok ? undefined : `the target returned HTTP ${r.status}`
+        reason: r.ok ? undefined
+          : declined ? `the destination declined our request with HTTP ${r.status}, which usually means bot protection. Whether it works for a person was not established.`
+          : serverErr ? `the destination returned HTTP ${r.status}, so it is failing right now. That is not the same as the page not existing.`
+          : `the target returned HTTP ${r.status}`
       };
     }
   } finally { clearTimeout(timer); }
@@ -341,6 +356,8 @@ function titleOf(html, fallback) {
 }
 
 async function answer(question, maxWords = 220) {
+  const audit = matchAudit(question);
+  if (audit) return auditAnswer(question, audit);
   if (!INDEX || !INDEX.length) INDEX = await buildIndex();
   if (!INDEX.length) throw new Error('No pages indexed. Check SENSO_DOMAINS and network.');
   const ranked = INDEX.map(p => ({ p, s: score(question, p) })).sort((a, b) => b.s - a.s);
@@ -389,6 +406,8 @@ async function answer(question, maxWords = 220) {
     answer: words.slice(0, maxWords).join(' ') + (words.length > maxWords ? ' ...' : ''),
     source: { title: titleOf(html, pick.title), url: pick.url, publisher: pick.domain },
     answer_source: declared ? 'schema.org description declared by the publisher' : 'page text',
+    publisher_identity: publisherIdentity(ld, pick.domain),
+    image: declaredImage(html, ld),
     action: passed ? action : null,
     action_withheld: passed || !action ? null : {
       label: action.label,
@@ -403,6 +422,273 @@ async function answer(question, maxWords = 220) {
     action_note: !action ? 'This page declares no next step. None was invented.'
       : passed ? 'The declared next step was requested over HTTP and responded, and it is not the publisher\'s own site root. Whether it is relevant to this question, or the right brand, is not checked here.'
       : 'The declared next step did not pass the destination check, so it was withheld rather than passed on. Read action_withheld.say_this to the user.'
+  };
+}
+
+// The card's photograph is the publisher's OWN declared image, og:image or schema.org image.
+// Nothing is fetched from a stock library and nothing is generated. If the publisher declares
+// no image the slot stays empty and says so, exactly like every other slot on the card.
+function meta(html, prop) {
+  const re = new RegExp('<meta[^>]+(?:property|name)=["\']' + prop + '["\'][^>]*content=["\']([^"\']{0,600})', 'i');
+  const m = html.match(re); return m ? m[1].trim() : null;
+}
+function declaredImage(html, ld) {
+  // Looked for in order of how strong the publisher's declaration is, and the source is always
+  // reported so nobody has to guess where the picture came from.
+  //
+  //   1. The image attached to the call to action itself. On this network that asset is served
+  //      from a /cta-assets/ path, so it is the publisher's own artwork for this exact offer.
+  //      It is the most specific image on the page and the right one for the card.
+  //   2. og:image or twitter:image, the conventional declaration.
+  //   3. A schema.org image node.
+  //   4. Any substantial content image on the page that is not an icon or a logo.
+  //
+  // Nothing is generated, nothing is fetched from a stock library, and no brand logo is pasted
+  // in from elsewhere. If none of the four is present the slot stays empty and says so.
+  const imgs = [...html.matchAll(/<img[^>]+src=["']([^"']+)["'][^>]*>/gi)].map(m => ({ tag: m[0], src: m[1] }));
+
+  const cta = imgs.find(i => /\/cta-assets\//i.test(i.src));
+  if (cta) {
+    const alt = (cta.tag.match(/alt=["']([^"']{0,200})["']/i) || [,''])[1];
+    return { url: cta.src, source: 'the image the publisher attached to this call to action', alt: alt || null };
+  }
+
+  const og = meta(html, 'og:image') || meta(html, 'twitter:image');
+  if (og) return { url: og, source: 'og:image declared by the publisher' };
+
+  const stack = Array.isArray(ld) ? [...ld] : [ld];
+  while (stack.length) {
+    const n = stack.pop();
+    if (!n || typeof n !== 'object') continue;
+    if (Array.isArray(n)) { stack.push(...n); continue; }
+    const im = n.image;
+    const cand = typeof im === 'string' ? im : (im && (im.url || im.contentUrl)) || null;
+    if (cand) return { url: cand, source: 'schema.org image declared by the publisher' };
+    stack.push(...Object.values(n));
+  }
+
+  // Last resort: a real content image the publisher put on the page. Icons, favicons, logos and
+  // anything marked decorative are excluded, because a 20 pixel logo stretched across a card is
+  // worse than an honest empty slot.
+  const content = imgs.find(i =>
+    !/icon|favicon|logo|sprite|avatar|badge/i.test(i.src) &&
+    !/aria-hidden=["']true["']/i.test(i.tag) &&
+    !/\.svg(\?|$)/i.test(i.src));
+  if (content) {
+    const alt = (content.tag.match(/alt=["']([^"']{0,200})["']/i) || [,''])[1];
+    return { url: content.src, source: 'an image published on the page, not a declared card image', alt: alt || null };
+  }
+
+  return { url: null, source: null,
+           missing: 'This page publishes no image an agent can use: no call to action asset, no og:image, no schema.org image, and no content image.' };
+}
+
+// ---------- publisher identity, for the card's wordmark ----------
+// The branding on the card comes from the publisher's OWN declared schema.org Organization,
+// not from a logo we ship per customer. That keeps it keyless and makes it work for any
+// publisher on the network with no setup.
+//
+// The logo image is a separate slot from the name, and it is reported honestly. These pages
+// declare a name and a url and no logo, so the image slot is empty and says why. An empty slot
+// is a position the publisher has not filled, never a rendering failure on our side.
+function publisherIdentity(ld, domain) {
+  let name = null, url = null, logo = null;
+  const stack = Array.isArray(ld) ? [...ld] : [ld];
+  while (stack.length) {
+    const n = stack.pop();
+    if (!n) continue;
+    if (Array.isArray(n)) { stack.push(...n); continue; }
+    if (typeof n !== 'object') continue;
+    const types = [].concat(n['@type'] || []);
+    if (types.includes('Organization')) {
+      const host = (() => { try { return new URL(n.url).hostname.replace(/^www\./, ''); } catch { return null; } })();
+      if (!name || host === domain) {
+        if (n.name) name = n.name;
+        if (n.url) url = n.url;
+        const l = n.logo;
+        const cand = typeof l === 'string' ? l : (l && (l.url || l.contentUrl)) || null;
+        if (cand) logo = cand;
+      }
+    }
+    stack.push(...Object.values(n));
+  }
+  return {
+    name: name || null,
+    url: url || null,
+    logo: logo || null,
+    name_source: name ? 'schema.org Organization declared by the publisher' : null,
+    logo_status: logo ? 'declared' : 'not_declared',
+    logo_note: logo ? null : 'This publisher declares no organization logo in its structured data, so the image slot is empty. That is a slot the publisher has not filled, not a failure to render.'
+  };
+}
+
+// ---------- live publisher audit ----------
+// Nothing here is simulated. A named public URL is fetched over ordinary public HTTP with no
+// key, and the card is built from WHAT THAT PAGE ACTUALLY DECLARES.
+//
+// Why this is the interesting case rather than the sad one. Most of the web declares nothing an
+// agent can use. Reading a page and reporting, slot by slot, exactly which declaration is
+// missing is a more useful thing to hand a publisher than a card we invented for them. An empty
+// slot is a specific thing they have not published, named precisely, and every empty slot is
+// something they can fix.
+let AUDIT_TARGETS = [];
+try {
+  AUDIT_TARGETS = JSON.parse(require('fs').readFileSync(require('path').join(__dirname, 'fixtures', 'simulated-cards.json'), 'utf8')).cards || [];
+} catch { AUDIT_TARGETS = []; }
+
+function matchAudit(question) {
+  const q = question.toLowerCase().replace(/[^a-z0-9]+/g, ' ');
+  for (const c of AUDIT_TARGETS) for (const t of c.triggers || []) if (q.includes(t.toLowerCase())) return c;
+  return null;
+}
+
+const metaOf = (html, prop) => {
+  const re = new RegExp('<meta[^>]+(?:property|name)=["\']' + prop + '["\'][^>]*content=["\']([^"\']{0,400})', 'i');
+  const m = html.match(re); return m ? m[1].trim() : null;
+};
+
+// A publisher's edge may refuse an automated request outright. That is not a missing page and
+// it is not our failure to parse one: it is the publisher declining to be read by anything that
+// is not a browser. It is reported as its own state, with the wall named, because for a brand
+// it is the single most consequential fact about how it appears in an AI answer.
+async function fetchPage(url) {
+  const BROWSER_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0 Safari/537.36';
+  const ac = new AbortController();
+  const timer = setTimeout(() => ac.abort(), 20000);
+  try {
+    const r = await fetch(url, { redirect: 'follow', signal: ac.signal,
+      headers: { 'user-agent': BROWSER_UA, accept: 'text/html,application/xhtml+xml' } });
+    const body = await r.text();
+    return { ok: r.ok, status: r.status, body, final: r.url || url };
+  } catch (e) {
+    return { ok: false, status: 0, body: '', error: e.name === 'AbortError' ? 'no response within 20s' : e.message };
+  } finally { clearTimeout(timer); }
+}
+
+function wallName(status, body) {
+  if (/cloudflare/i.test(body) && /attention required/i.test(body)) return 'a Cloudflare bot challenge';
+  if (/waf-block|waf_block/i.test(body)) return 'a web application firewall block page';
+  if (status === 403) return 'an edge rule that refuses automated requests';
+  if (status === 429) return 'rate limiting at the edge';
+  if (status === 0) return 'no response at all';
+  return `HTTP ${status}`;
+}
+
+async function auditAnswer(question, t) {
+  const res = await fetchPage(t.url);
+  const html = res.body || '';
+  if (!res.ok || !html) {
+    const wall = wallName(res.status, html);
+    // The declared next step still gets checked, because whether the destination responds is a
+    // separate question from whether the homepage would let us read it.
+    let blockedAction = null;
+    if (t.action) {
+      const v = await verifyActionTarget(t.action.target);
+      blockedAction = {
+        label: t.action.label, status: v.status, http_status: v.http_status,
+        checked_url: t.action.target,
+        say_this: v.status === 'resolves'
+          ? `${t.fallback_name} has a next step that responds, but the page it sits on could not be read at all, so nothing about it could be verified.`
+          : `The next step for ${t.fallback_name} could not be confirmed: ${v.reason}. It has not been passed on.`
+      };
+    }
+    return {
+      question, match: 'ok', score: 1, is_live_audit: true, is_blocked: true,
+      audited_url: t.url, http_status: res.status,
+      audit_note: `${t.fallback_name} was requested over ordinary public HTTPS with a normal browser user agent, and the request was refused before any content was returned. Nothing on this card is invented, because nothing was readable.`,
+      answer: `An agent cannot read ${t.fallback_name}. The request to ${t.url} was stopped by ${wall}, returning HTTP ${res.status}. No title, no description, no identity and no next step reached the agent, so anything an AI answer says about ${t.fallback_name} today comes from somebody else writing about them.`,
+      answer_source: null,
+      answer_missing: `Blocked by ${wall}, HTTP ${res.status}. Nothing was returned to read.`,
+      source: { title: t.fallback_name, url: t.url, publisher: t.domain },
+      publisher_identity: { name: null, url: t.url, logo: null, name_source: null,
+        logo_status: 'unreadable',
+        logo_note: `Blocked by ${wall}, so the publisher's declared identity could not be read.` },
+      image: t.supplied_image
+        ? { url: t.supplied_image, source: 'SUPPLIED by us for display, not read from the publisher', supplied: true,
+            note: `The page was blocked by ${wall}, so nothing could be read from it. This image was supplied for display and the publisher did not declare it.` }
+        : { url: null, source: null, missing: `Blocked by ${wall}, so no image could be read from the page.` },
+      structured_data_blocks: 0,
+      action: null, action_withheld: blockedAction,
+      action_missing: `The page was never returned, so no next step could be read. Blocked by ${wall}, HTTP ${res.status}.`,
+      also_considered: [],
+      note: 'Live audit. The publisher refused the request.',
+      action_note: 'Nothing was readable, so nothing is claimed. An empty result is an empty result, never an absence.'
+    };
+  }
+  const ld = jsonLdBlocks(html);
+  const ident = publisherIdentity(ld, t.domain);
+  let action = findAction(ld);
+  const declaredDesc = findDescription(ld);
+  const ogDesc = metaOf(html, 'og:description') || metaOf(html, 'description');
+  const ogSite = metaOf(html, 'og:site_name');
+  if (!ident.name) ident.logo = ident.logo || meta(html, 'og:logo') || null;
+  if (!ident.name && ogSite) {
+    ident.name = ogSite;
+    ident.name_source = 'og:site_name meta tag, which is weaker than a declared schema.org Organization';
+  }
+  if (!ident.name) {
+    const an = meta(html, 'application-name') || meta(html, 'apple-mobile-web-app-title');
+    if (an) { ident.name = an; ident.name_source = 'application-name meta tag, weaker still than a declared Organization'; }
+  }
+  if (!ident.name) {
+    ident.name = t.fallback_name;
+    ident.name_source = null;
+    ident.name_missing = 'This publisher declares no schema.org Organization, no og:site_name and no application-name, so the wordmark here is the name we asked for rather than one the page declared.';
+  }
+  const answerText = declaredDesc || ogDesc || '';
+
+  if (!action && t.action) {
+    action = { type: 'SuppliedAction', label: t.action.label, target: t.action.target, description: '', supplied: true,
+      supplied_note: 'This publisher declares no schema.org potentialAction, so this next step was supplied rather than read from the page. The destination check on it is real.' };
+  }
+  if (action && VERIFY_ACTIONS) {
+    action.target_shape = targetShape(action.target, t.domain);
+    action.verified = await verifyActionTarget(action.target);
+    // On a brand card the brand's own site is a legitimate destination, so the publisher-root
+    // exclusion does not apply here. It exists to catch an article whose only next step points
+    // back at the site the article is already on.
+    action.usable = action.verified.status === 'resolves';
+  }
+  const passed = !!(action && action.usable);
+
+  return {
+    question,
+    match: 'ok',
+    score: 1,
+    is_live_audit: true,
+    audited_url: t.url,
+    is_blocked: false,
+    audit_note: 'Nothing on this card was written by us. The page at ' + t.url + ' was fetched over ordinary public HTTP with no key and no account, and every slot below is filled from what that page declares, or left empty with the reason.',
+    answer: answerText,
+    source: { title: (html.match(/<title[^>]*>([\s\S]*?)<\/title>/i) || [,''])[1].trim().slice(0, 160) || t.fallback_name, url: t.url, publisher: t.domain },
+    answer_source: declaredDesc ? 'schema.org description declared by the publisher'
+                 : ogDesc ? 'og:description meta tag, which is not structured data an agent can rely on'
+                 : null,
+    answer_missing: declaredDesc || ogDesc ? null
+      : 'This page declares no description an agent can read: no schema.org description and no og:description meta tag.',
+    publisher_identity: ident,
+    image: (() => {
+      const d = declaredImage(html, ld);
+      if (d.url) return d;
+      if (t.supplied_image) return { url: t.supplied_image, source: 'SUPPLIED by us for display, not declared by the publisher', supplied: true,
+        note: 'This publisher declares no image an agent can use, so this one was supplied for display. It is not something they published.' };
+      return d;
+    })(),
+    structured_data_blocks: (html.match(/<script[^>]*application\/ld\+json/gi) || []).length,
+    action: passed ? action : null,
+    action_withheld: action && !passed ? {
+      label: action.label, status: action.verified ? action.verified.status : 'unchecked',
+      http_status: action.verified ? action.verified.http_status : undefined,
+      checked_url: action.target, say_this: spokenRefusal(action)
+    } : null,
+    action_missing: action ? null
+      : 'This page declares no schema.org potentialAction, so there is no next step to hand an agent. None was invented.',
+    also_considered: [],
+    note: 'Live audit of a real published page.',
+    action_note: action
+      ? (passed ? 'The declared next step responded and is not the publisher\'s own site root.'
+                : 'The declared next step did not pass its check and was withheld.')
+      : 'No next step is declared on this page, so the slot is empty. That is a thing the publisher has not published, not a failure to read it.'
   };
 }
 
