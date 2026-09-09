@@ -999,6 +999,30 @@ if (!RUN_CLI) {
     if (req.method === 'OPTIONS') return send(204);
     const path = (req.url || '').split('?')[0];
     if (path === '/health' || path === '/api/health') return send(200, { ok: true, domains: DOMAINS, indexed: INDEX ? INDEX.length : 0 });
+    // A person pasting the URL into a browser should land on something that explains what this
+    // is, not on a 404 or a bare protocol error. Agents POST; people GET.
+    if (req.method === 'GET') {
+      const host = req.headers.host || 'this-host';
+      const page = '<!doctype html><meta charset="utf-8"><title>senso-mcp</title>' +
+        '<style>body{margin:0;background:#fff;color:#0d0d0d;font:16px/1.7 ui-sans-serif,-apple-system,"Segoe UI",Helvetica,Arial,sans-serif}' +
+        '.w{max-width:680px;margin:0 auto;padding:56px 24px 90px}h1{font-size:26px;letter-spacing:-.01em;margin:0 0 6px}' +
+        '.s{color:#6b6b78;margin:0 0 30px}h2{font-size:15px;text-transform:uppercase;letter-spacing:.06em;color:#8f8f9d;margin:34px 0 10px;font-weight:600}' +
+        'code,pre{font:13.5px/1.7 ui-monospace,SFMono-Regular,Menlo,monospace}' +
+        'pre{background:#f7f7f9;border:1px solid #ececf1;border-radius:12px;padding:14px 16px;overflow-x:auto}' +
+        'ol{padding-left:20px}li{margin:7px 0}.t{display:inline-block;background:#f1f1f3;border-radius:999px;padding:3px 11px;font-size:13px;margin:0 6px 6px 0}' +
+        'a{color:#2f4fd8}</style><div class="w">' +
+        '<h1>senso-mcp</h1><p class="s">A verified answer, the URL to cite for it, and the next step the publisher attached, checked before it is passed on. No API key. No account.</p>' +
+        '<h2>Connect it to ChatGPT</h2><ol>' +
+        '<li>Settings, then Security and login, and turn on <b>Developer mode</b>.</li>' +
+        '<li>Settings, then Apps and Connectors, then the plus, then create a developer mode app.</li>' +
+        '<li>Paste this server URL:</li></ol><pre>https://' + host + '/mcp</pre>' +
+        '<h2>Tools</h2><p><span class="t">senso_verified_answer</span><span class="t">senso_probe</span><span class="t">senso_list_sources</span></p>' +
+        '<h2>Try it from a terminal</h2><pre>curl -s https://' + host + '/mcp \\\n  -H \'content-type: application/json\' \\\n  -d \'{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"senso_verified_answer","arguments":{"question":"What makes documentation readable by AI agents?"}}}\'</pre>' +
+        '<h2>What the check does</h2><p>Every returned action is requested over HTTP first. Four states: resolves, dead, unreachable, blocked. On anything but a resolving destination the action is withheld and replaced with a reason written to be spoken. A 403 or a timeout reports <i>unreachable</i>, never <i>dead</i>, because a refusal is not proof a page is missing.</p>' +
+        '<h2>Indexed</h2><p>' + (INDEX ? INDEX.length.toLocaleString() : 0) + ' published pages across ' + DOMAINS.join(', ') + '. <a href="/health">/health</a></p>' +
+        '<h2>Source</h2><p><a href="https://github.com/aayushdixit27/senso-mcp">github.com/aayushdixit27/senso-mcp</a></p></div>';
+      return send(200, page, { 'content-type': 'text/html; charset=utf-8' });
+    }
     if (req.method !== 'POST') return send(405, { error: 'POST JSON-RPC to /mcp' });
     let body = req.body;
     if (body === undefined || body === null || body === '') {
