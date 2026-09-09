@@ -212,7 +212,18 @@ async function verifyActionTarget(target) {
   } finally { clearTimeout(timer); }
 }
 
+// A precomputed index ships with the deployment. Building it live means fetching both sitemaps
+// and every child sitemap, which takes 30 to 60 seconds. That is fine for a long-lived process
+// and fatal for a serverless function, where every cold start would pay it again. The file is
+// generated from the same sitemaps by the same rules, so the served result is identical.
 let INDEX = null;
+try {
+  const pre = require('path').join(__dirname, 'fixtures', 'index.json');
+  if (require('fs').existsSync(pre)) {
+    INDEX = JSON.parse(require('fs').readFileSync(pre, 'utf8'));
+    if (!Array.isArray(INDEX) || !INDEX.length) INDEX = null;
+  }
+} catch { INDEX = null; }
 
 const norm = s => s.toLowerCase().replace(/[^a-z0-9]+/g, ' ').split(' ').filter(w => w && !STOP.has(w));
 
@@ -973,7 +984,42 @@ function startMcpHttp() {
 }
 
 const HTTP_IDX = process.argv.indexOf('--http');
-if (MCPHTTP_IDX !== -1) {
+const RUN_CLI = require.main === module;
+if (!RUN_CLI) {
+  // Imported, not executed. Export a request handler so a serverless platform can serve the
+  // same MCP endpoint. Nothing below this point runs.
+  module.exports = async function handler(req, res) {
+    const cors = {
+      'access-control-allow-origin': '*',
+      'access-control-allow-headers': '*',
+      'access-control-allow-methods': 'GET, POST, DELETE, OPTIONS',
+      'cache-control': 'no-store'
+    };
+    const send = (code, obj, extra) => { res.writeHead(code, Object.assign({}, cors, extra || { 'content-type': 'application/json; charset=utf-8' })); res.end(obj === undefined ? '' : (typeof obj === 'string' ? obj : JSON.stringify(obj))); };
+    if (req.method === 'OPTIONS') return send(204);
+    const path = (req.url || '').split('?')[0];
+    if (path === '/health' || path === '/api/health') return send(200, { ok: true, domains: DOMAINS, indexed: INDEX ? INDEX.length : 0 });
+    if (req.method !== 'POST') return send(405, { error: 'POST JSON-RPC to /mcp' });
+    let body = req.body;
+    if (body === undefined || body === null || body === '') {
+      body = await new Promise(r => { let b = ''; req.setEncoding('utf8'); req.on('data', c => { b += c; }); req.on('end', () => r(b)); });
+    }
+    let msg;
+    try { msg = typeof body === 'string' ? JSON.parse(body) : body; }
+    catch { return send(400, { jsonrpc: '2.0', id: null, error: { code: -32700, message: 'parse error' } }); }
+    const batch = Array.isArray(msg) ? msg : [msg];
+    const out = (await Promise.all(batch.map(m =>
+      Promise.resolve().then(() => dispatch(m)).catch(e =>
+        m && m.id !== undefined ? { jsonrpc: '2.0', id: m.id, error: { code: -32000, message: e.message } } : null)
+    ))).filter(Boolean);
+    if (!out.length) return send(202);
+    const payload = Array.isArray(msg) ? out : out[0];
+    if (/text\/event-stream/.test(req.headers.accept || '')) {
+      return send(200, 'event: message\ndata: ' + JSON.stringify(payload) + '\n\n', { 'content-type': 'text/event-stream', connection: 'keep-alive' });
+    }
+    send(200, payload);
+  };
+} else if (MCPHTTP_IDX !== -1) {
   startMcpHttp();
 } else if (HTTP_IDX !== -1) {
   const http = require('http');

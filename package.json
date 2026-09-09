@@ -1,0 +1,7 @@
+{
+  "name": "senso-mcp",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Keyless MCP server that returns a verified answer, its citation, and the publisher's next step, checked before it is passed on.",
+  "engines": { "node": ">=18" }
+}
